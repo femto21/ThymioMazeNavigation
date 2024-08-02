@@ -1,0 +1,302 @@
+var state
+var direction
+var path
+var color
+var barcode = 1
+var min
+var max
+var mean
+var a
+var b
+var part
+var lines
+var TapeOrTable
+var follow
+var counter = 0
+var count = 0
+
+state=STOPPED
+motor.left.target=0
+motor.right.target=0
+
+onevent button.forward
+  state=FORWARD
+  motor.left.target=TARGET
+  motor.right.target=TARGET
+  barcode = 1
+  color = 0
+  min = 0
+  max = 0
+  mean = 0
+  a = 0
+  b = 0
+  part = 1
+  lines = 0
+  path = 0
+  follow = 0
+  counter = 0
+  call leds.circle(0,0,0,0,0,0,0,0)
+  call leds.top(0,0,0)
+  
+onevent button.backward
+  state=STOPPED
+  motor.left.target=0
+  motor.right.target=0
+	
+onevent prox
+  call math.stat(prox.horizontal[1:3], min, max, mean)
+  if state == DONOTHING then
+  	motor.left.target=0
+  	motor.right.target=0
+  	call leds.top(32,0,0)
+  	if color ==1 then
+  		call leds.top(32,0,0)
+  	elseif color ==2 then
+  		call leds.top(0,32,0)
+  	elseif color ==3 then
+  		call leds.top(0,0,32)
+  	end
+  elseif state != STOPPED and part == 1 then
+    if (state == FORWARD or state == RIGHT) and prox.ground.delta[0]<EDGE and prox.ground.delta[1] >= EDGE then
+      state = LEFT 
+      motor.left.target = TARGET2
+      motor.right.target = TARGET
+      when prox.ground.delta[0] >= EDGE and prox.ground.delta[1] >= EDGE and mean > THRESHOLD do
+        motor.left.target = 0
+        motor.right.target= 0
+      end
+    elseif (state == FORWARD or state == LEFT) and prox.ground.delta[1]<EDGE and prox.ground.delta [0] >= EDGE then
+      state = RIGHT
+      motor.left.target = TARGET
+      motor.right.target = TARGET2
+    elseif state == FORWARD and (prox.ground.delta[0]>=EDGE and prox.ground.delta[1]>=EDGE) then
+      state = FORWARD
+      motor.left.target = TARGET
+      motor.right.target = TARGET
+    end
+    callsub identify
+  elseif  state != STOPPED and part == 2 then
+    if state == FORWARD and mean >= THRESHOLD2 and direction == LEFT then
+      state = TURN_LEFT
+      motor.left.target = -TARGET
+      motor.right.target = TARGET
+      timer.period[0]=600
+      lines = 0
+    elseif  state == FORWARD and mean >= THRESHOLD2 and direction == RIGHT then
+      state = TURN_RIGHT
+      motor.left.target = TARGET
+      motor.right.target = -TARGET
+      timer.period[0]=600
+      lines = 0
+    end
+    if TapeOrTable == 0 and prox.ground.delta[0] <= EDGE then
+      TapeOrTable = 1
+    elseif TapeOrTable == 1 and prox.ground.delta[0] > EDGE then
+      TapeOrTable = 0
+      lines ++
+    end
+    when lines>=3 do
+      state = PAUSE
+      call leds.top(32,0,0)
+      call sound.freq(440, 1000)
+      motor.left.target = 0
+      motor.right.target = 0
+      timer.period[1]= 5000
+    end
+  elseif state != STOPPED and part == 3 then
+    if state == FORWARD and path == LEFT and mean >= THRESHOLD2 then
+      state = TURN_LEFT
+      motor.left.target = -TARGET
+      motor.right.target = TARGET
+      timer.period[0]=830
+    elseif  state == FORWARD and path == RIGHT and mean >= THRESHOLD2 then
+    	state = TURN_RIGHT
+    	motor.left.target = TARGET
+      motor.right.target = -TARGET
+      timer.period[0]=830   
+    end
+    if follow == 1 then
+      callsub linefollower
+    end	
+  end
+  if state == FORWARD and prox.horizontal[0] > 3700 and (part == 1 or part == 2) then
+    state = TURN_RIGHT
+    motor.left.target = TARGET
+    motor.right.target = TARGET/4
+    timer.period[0] = 300
+  elseif  state == FORWARD and prox.horizontal[4] > 3700 and (part == 1 or part == 2) then
+    state = TURN_LEFT
+    motor.left.target = TARGET/4
+    motor.right.target = TARGET
+    timer.period[0] = 300
+  elseif part == 3 and(prox.horizontal[0] > 3700 and prox.horizontal[1] > 3700) then
+  	state = TURN_RIGHT
+    motor.left.target = TARGET
+    motor.right.target = TARGET/4
+    timer.period[0] = 300
+  elseif part == 3 and(prox.horizontal[4] > 3700 and prox.horizontal[3] > 3700) then
+  	state = TURN_LEFT
+    motor.left.target = TARGET/4
+    motor.right.target = TARGET
+    timer.period[0] = 300
+  end
+	
+sub identify
+  call math.stat(prox.horizontal[1:3], min, max, mean)
+  if (state == FORWARD or state == RIGHT or state == LEFT) and barcode == 1 then
+    if prox.horizontal[1] >= THRESHOLD1 and prox.horizontal[3] < THRESHOLD1 then
+      state = TURN_LEFT
+      motor.left.target = -TARGET
+      motor.right.target = TARGET
+      timer.period[0] = 750
+      direction = LEFT
+      barcode = 2
+      call sound.freq(440,1000)
+      call leds.circle(0,0,0,0,0,0,0,32)
+    elseif prox.horizontal[1] < THRESHOLD1 and prox.horizontal[3] >= THRESHOLD1 then
+      state = TURN_RIGHT
+      motor.left.target = TARGET
+      motor.right.target = -TARGET
+      timer.period[0] = 750
+      direction = RIGHT
+      barcode = 2
+      call sound.freq(440,1000)
+      call leds.circle(0,32,0,0,0,0,0,0)
+    end  
+  elseif (state == FORWARD or state == RIGHT or state == LEFT) and barcode == 2 then
+    if mean >= 2700 and direction == LEFT then
+      a = prox.horizontal[1]
+      b = prox.horizontal[3]
+      state = TURN_RIGHT
+      motor.left.target = TARGET
+      motor.right.target = -TARGET
+      timer.period[0]= 755
+      barcode = 3
+      call sound.freq(440,1000)
+    elseif mean >= 2700 and direction == RIGHT then
+      a = prox.horizontal[1]
+      b = prox.horizontal[3]
+      state = TURN_LEFT
+      motor.left.target = -TARGET
+      motor.right.target = TARGET
+      timer.period[0] = 755
+      barcode = 3
+      call sound.freq(440,1000)
+    end 
+    if a > b then
+      path = LEFT
+      call leds.circle(0,0,0,0,0,0,0,32)
+    elseif a < b then
+      path = RIGHT
+      call leds.circle(0,32,0,0,0,0,0,0)
+    end
+  elseif (state == FORWARD or state == LEFT or state == RIGHT) and barcode == 3 then
+    if mean >=THRESHOLD2 then
+      if prox.horizontal[1] > prox.horizontal[2] and prox.horizontal[1] > prox.horizontal[3] then
+        color = 1
+      elseif prox.horizontal[2] > prox.horizontal[1] and prox.horizontal[2] > prox.horizontal[3] then
+        color = 2
+      elseif prox.horizontal[3] > prox.horizontal[1] and prox.horizontal[3] > prox.horizontal[2] then
+        color = 3 
+      end
+    end
+    if mean >= THRESHOLD2 and direction == LEFT then
+      state = TURN_RIGHT
+      motor.left.target = TARGET
+      motor.right.target = -TARGET
+      timer.period[0] = 685
+      barcode = 0
+      part = 2  
+    elseif mean >= THRESHOLD2 and direction == RIGHT then
+      state = TURN_LEFT
+      motor.left.target = -TARGET
+      motor.right.target = TARGET
+      timer.period[0] = 685
+      barcode = 0
+      part = 2
+    end
+  end
+ 
+sub linefollower
+  call math.stat(prox.horizontal[1:3], min, max, mean)
+  if state != STOPPED and part == 3 then
+  if counter == 1 then
+      motor.left.target = TARGET
+      motor.right.target = -TARGET/2
+      timer.period[0]=100
+      if (prox.ground.delta[0] < EDGE or prox.ground.delta[1] < EDGE) then
+        motor.left.target = 0
+        motor.right.target = 0
+        state = DONOTHING
+        end
+    elseif  prox.ground.delta[0] >= EDGE and prox.ground.delta[1] >= EDGE and counter == 0 then
+      state = FORWARD
+      motor.left.target = TARGET
+      motor.right.target = TARGET
+      when mean > 2000 do
+      	counter = 1
+      end
+    elseif prox.ground.delta[0] < EDGE and prox.ground.delta[1] >= EDGE then
+      state = LEFT
+      motor.left.target = 40
+      motor.right.target = TARGET
+    elseif prox.ground.delta[1] < EDGE and prox.ground.delta[0] >= EDGE then
+      state = RIGHT
+      motor.left.target = TARGET
+      motor.right.target = 40
+      end
+    end
+
+    
+onevent timer0
+  if  barcode == 3 then
+	if direction == LEFT then
+		state = FORWARD
+    		motor.left.target = TARGET-40
+    		motor.right.target = TARGET
+    		timer.period[0]=0
+    	elseif direction == RIGHT then
+    		state = FORWARD
+    		motor.left.target = TARGET
+    		motor.right.target = TARGET-40
+    		timer.period[0]=0
+	end
+  elseif barcode == 2 then
+  	if  state == TURN_RIGHT then
+  		state = FORWARD
+    		motor.left.target = TARGET-40
+    		motor.right.target = TARGET
+    		timer.period[0]=0
+    	elseif  state == TURN_LEFT then
+    		state = FORWARD
+    		motor.left.target = TARGET
+    		motor.right.target = TARGET-40
+    		timer.period[0]=0
+    	end
+  elseif counter == 0 and part < 3 then
+    state = FORWARD
+    motor.left.target = TARGET
+    motor.right.target = TARGET
+    timer.period[0]=0
+  elseif counter == 0 and part >= 3 then
+    state = FORWARD
+    motor.left.target = TARGET
+    motor.right.target = TARGET
+    timer.period[0]=0
+    follow = 1
+  elseif  counter ==1 then
+    motor.left.target = -TARGET
+    motor.right.target = -TARGET
+    timer.period[0]=0
+  end
+  call sound.freq(440,-1)
+  call leds.circle(0,0,0,0,0,0,0,0)
+  
+onevent timer1
+    state = FORWARD
+    motor.left.target = TARGET
+    motor.right.target = TARGET
+    part = 3
+    timer.period[1]=0
+    call leds.top(0,0,0)
+	 call sound.freq(440, -1)
